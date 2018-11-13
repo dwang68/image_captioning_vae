@@ -44,7 +44,7 @@ def main(args):
         elif anneal_function == 'linear':
             return min(1, step / x0)
 
-    nll = torch.nn.NLLLoss()
+    nll = torch.nn.NLLLoss(ignore_index=pad_idx)
 
     def loss_fn(logp, target, length, mean, logv, anneal_function, step, k, x0):
         # cut-off unnecessary padding from target, and flatten
@@ -92,14 +92,18 @@ def main(args):
             
             # Set mini-batch dataset
             images = images.to(device)
-            captions = captions.to(device)
+            captions_src = captions[:, :captions.size()[1]-1]
+            captions_tgt = captions[:, 1:]
+            captions_src = captions_src.to(device)
+            captions_tgt = captions_tgt.to(device)
+            lengths = lengths - 1
             lengths = lengths.to(device)
             
             # Forward, backward and optimize
-            logp, mean, logv, z = model(images, captions, lengths)
+            logp, mean, logv, z = model(images, captions_src, lengths)
 
             #loss calculation
-            NLL_loss, KL_loss, KL_weight = loss_fn(logp, captions, lengths, mean, logv, args.anneal_function,
+            NLL_loss, KL_loss, KL_weight = loss_fn(logp, captions_tgt, lengths, mean, logv, args.anneal_function,
                                                    step_for_kl_annealing, args.k, args.x0)
 
             loss = (NLL_loss + KL_weight * KL_loss) / args.batch_size
@@ -122,14 +126,14 @@ def main(args):
                 # Convert word_ids to words
                 sampled_caption = []
                 ground_truth_caption = []
-                for word_id in outputs[0]:
+                for word_id in outputs[-1]:
                     word = vocab.idx2word[word_id]
                     sampled_caption.append(word)
                     if word == '<end>':
                         break
 
-                captions = captions.cpu().numpy()
-                for word_id in captions[0]:
+                captions_tgt = captions_tgt.cpu().numpy()
+                for word_id in captions_tgt[-1]:
                     word = vocab.idx2word[word_id]
                     ground_truth_caption.append(word)
                     if word == '<end>':
@@ -152,14 +156,18 @@ def main(args):
         for j, (images, captions, lengths) in enumerate(valid_data_loader):
             # Set mini-batch dataset
             images = images.to(device)
-            captions = captions.to(device)
+            captions_src = captions[:, :captions.size()[1] - 1]
+            captions_tgt = captions[:, 1:]
+            captions_src = captions_src.to(device)
+            captions_tgt = captions_tgt.to(device)
+            lengths = lengths - 1
             lengths = lengths.to(device)
 
             # Forward, backward and optimize
-            logp, mean, logv, z = model(images, captions, lengths)
+            logp, mean, logv, z = model(images, captions_src, lengths)
 
             # loss calculation
-            NLL_loss, KL_loss, KL_weight = loss_fn(logp, captions, lengths, mean, logv, args.anneal_function,
+            NLL_loss, KL_loss, KL_weight = loss_fn(logp, captions_tgt, lengths, mean, logv, args.anneal_function,
                                                    step_for_kl_annealing, args.k, args.x0)
 
             valid_loss += (NLL_loss + KL_weight * KL_loss) / args.batch_size
